@@ -114,9 +114,11 @@ const Notes = () => {
 
   // Get topic slug (URL-safe)
   const topicSlug = cleanTopicName
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-]/g, ""); // optional: remove special chars
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, "-") // replace all non-alphanumerics with dash
+  .replace(/-+/g, "-")         // collapse multiple dashes
+  .replace(/^-|-$/g, "");      // remove starting/ending dash
+// optional: remove special chars
 
   // Get subCategory from useParams (current category context)
   const currentSubCategory = subCategories[openSubCatId];
