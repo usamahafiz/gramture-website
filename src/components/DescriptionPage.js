@@ -1,0 +1,947 @@
+import React, { useState, useEffect } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { message, Spin } from "antd";
+import { FaChevronLeft, FaChevronRight } from "react-icons/fa";
+import { Document, Page, pdfjs } from "react-pdf";
+
+import CommentSection from "./CommentSection";
+import ShareArticle from "./ShareArticle";
+import CertificateGenerator from "./CertificateGenerator";
+
+import {
+  createSlug,
+  extractTextFromHTML,
+  fetchProducts,
+  fetchAllTopics,
+  calculateResults,
+  getNextTopic,
+  getPrevTopic,
+} from "../hooks/useDescriptionLogic";
+
+import "../assets/css/description.css";
+
+// Setup PDF.js worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+
+export default function Description() {
+  const { subCategory, topicSlug } = useParams();
+  const navigate = useNavigate();
+
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [mcqs, setMcqs] = useState([]);
+  const [selectedAnswer, setSelectedAnswer] = useState({});
+  const [answerFeedback, setAnswerFeedback] = useState({});
+  const [currentMcqIndex, setCurrentMcqIndex] = useState(0);
+  const [showResults, setShowResults] = useState(false);
+  const [showReviewSection, setShowReviewSection] = useState(false);
+  const [allTopics, setAllTopics] = useState([]);
+  const [currentTopicIndex, setCurrentTopicIndex] = useState(null);
+  const [userName, setUserName] = useState("");
+  const [numPages, setNumPages] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const productsList = await fetchProducts(subCategory, topicSlug);
+        setProducts(productsList);
+        setMcqs(productsList[0]?.mcqs || []);
+        setLoading(false);
+
+        const topicsList = await fetchAllTopics(subCategory);
+        setAllTopics(topicsList);
+
+        const currentTopicIdx = topicsList.findIndex(
+          (topic) => topic.id === topicSlug || topic.slug === topicSlug
+        );
+        setCurrentTopicIndex(currentTopicIdx);
+      } catch (error) {
+        message.error("Failed to fetch data.");
+        console.error(error);
+      }
+    })();
+  }, [subCategory, topicSlug]);
+
+  const handleAnswerChange = (event) => {
+    const { value } = event.target;
+    setSelectedAnswer({
+      ...selectedAnswer,
+      [currentMcqIndex]: value,
+    });
+  };
+
+  const handleNextQuestion = () => {
+    const currentMcq = mcqs[currentMcqIndex];
+    const selected = selectedAnswer[currentMcqIndex];
+
+    if (selected === undefined) {
+      message.error("Please select an answer before moving to the next question.");
+      return;
+    }
+
+    const feedback = selected === currentMcq.correctAnswer ? "Correct!" : "Incorrect.";
+    setAnswerFeedback({
+      ...answerFeedback,
+      [currentMcqIndex]: feedback,
+    });
+
+    if (currentMcqIndex + 1 < mcqs.length) {
+      setCurrentMcqIndex(currentMcqIndex + 1);
+    } else {
+      if (!userName) {
+        const name = prompt("Please enter your name: ");
+        setUserName(name || "Guest");
+      }
+      setShowResults(true);
+    }
+  };
+
+  const handleRetakeTest = () => {
+    setSelectedAnswer({});
+    setAnswerFeedback({});
+    setCurrentMcqIndex(0);
+    setShowResults(false);
+    setShowReviewSection(false);
+  };
+
+  const onDocumentLoadSuccess = ({ numPages }) => {
+    setNumPages(numPages);
+  };
+
+  return (
+    <div className="description-container">
+      {!loading && products.length > 0 && (
+        <>
+          <title>Gramture - {products[0].topic}</title>
+          <meta
+            name="description"
+            content={extractTextFromHTML(products[0].description).substring(0, 150)}
+          />
+        </>
+      )}
+
+      {loading && (
+        <div className="loader-overlay">
+          <Spin size="large" />
+        </div>
+      )}
+
+      {products.length > 0 && (
+        <>
+          <h1 className="topic-title">{products[0].topic}</h1>
+
+          {products.map((product) => (
+            <article key={product.id} className="product-article">
+              <div className="product-description" dangerouslySetInnerHTML={{ __html: product.description }} />
+            </article>
+          ))}
+
+          <Document
+            file={products[0].notesFile}
+            onLoadSuccess={onDocumentLoadSuccess}
+            loading={<Spin size="large" tip="Loading PDF..." />}
+            error={<div className="text-red-500">Failed to load PDF</div>}
+          >
+            {Array.from({ length: numPages }, (_, index) => (
+              <Page
+                key={`page_${index + 1}`}
+                pageNumber={index + 1}
+                renderTextLayer={false}
+                renderAnnotationLayer={false}
+              />
+            ))}
+          </Document>
+
+          {/* MCQ Section */}
+          {/* ... Keep your MCQ rendering code here as before ... */}
+
+          <CertificateGenerator
+            mcqs={mcqs}
+            selectedAnswer={selectedAnswer}
+            userName={userName}
+            calculateResults={() => calculateResults(mcqs, selectedAnswer)}
+            handleRetakeTest={handleRetakeTest}
+            topicName={products[0]?.topic}
+          />
+
+          <ShareArticle />
+
+          <div className="topic-navigation">
+            {getPrevTopic(allTopics, currentTopicIndex) &&
+              getPrevTopic(allTopics, currentTopicIndex).subCategory === subCategory &&
+              getPrevTopic(allTopics, currentTopicIndex).class === products[0].class && (
+                <Link
+                  to={`/description/${subCategory}/${getPrevTopic(allTopics, currentTopicIndex).slug}`}
+                  className="prev-button"
+                  onClick={() => window.scrollTo(0, 0)}
+                >
+                  <FaChevronLeft className="nav-icon" /> Previous Topic:{" "}
+                  {getPrevTopic(allTopics, currentTopicIndex).topic}
+                </Link>
+              )}
+
+            {getNextTopic(allTopics, currentTopicIndex) &&
+              getNextTopic(allTopics, currentTopicIndex).subCategory === subCategory &&
+              getNextTopic(allTopics, currentTopicIndex).class === products[0].class && (
+                <Link
+                  to={`/description/${subCategory}/${getNextTopic(allTopics, currentTopicIndex).slug}`}
+                  className="next-button"
+                  onClick={() => window.scrollTo(0, 0)}
+                >
+                  Next Topic: {getNextTopic(allTopics, currentTopicIndex).topic}{" "}
+                  <FaChevronRight className="nav-icon" />
+                </Link>
+              )}
+          </div>
+
+          <CommentSection subCategory={subCategory} topicId={products[0]?.id} />
+        </>
+      )}
+    </div>
+  );
+}
+
+
+
+
+
+
+
+
+
+
+
+// // src/components/DescriptionPage.js
+// import React, { useEffect } from "react";
+// import { useParams, useNavigate, Link } from "react-router-dom";
+// import { Spin, message } from "antd";
+// import { FaChevronLeft, FaChevronRight } from "react-icons/fa";
+// import { Document, Page, pdfjs } from "react-pdf";
+// import useDescriptionLogic, { createSlug } from "../hooks/useDescriptionLogic";
+// import CommentSection from "./CommentSection";
+// import ShareArticle from "./ShareArticle";
+// import CertificateGenerator from "./CertificateGenerator";
+// import "../assets/css/description.css";
+
+// pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+
+// const extractTextFromHTML = (htmlString) => {
+//   const parser = new DOMParser();
+//   const doc = parser.parseFromString(htmlString, "text/html");
+//   return doc.body.textContent || "";
+// };
+
+// export default function Description() {
+//   const { subCategory, topicSlug } = useParams();
+//   const navigate = useNavigate();
+
+//   const {
+//     products,
+//     loading,
+//     mcqs,
+//     selectedAnswer,
+//     setSelectedAnswer,
+//     answerFeedback,
+//     setAnswerFeedback,
+//     currentMcqIndex,
+//     setCurrentMcqIndex,
+//     showResults,
+//     setShowResults,
+//     showReviewSection,
+//     setShowReviewSection,
+//     allTopics,
+//     currentTopicIndex,
+//     setCurrentTopicIndex,
+//     userName,
+//     setUserName,
+//     numPages,
+//     setNumPages,
+//     calculateResults,
+//     handleRetakeTest,
+//   } = useDescriptionLogic({ subCategory, topicSlug });
+
+//   const handleAnswerChange = (event) => {
+//     const { value } = event.target;
+//     setSelectedAnswer({
+//       ...selectedAnswer,
+//       [currentMcqIndex]: value,
+//     });
+//   };
+
+//   const handleNextQuestion = () => {
+//     const currentMcq = mcqs[currentMcqIndex];
+//     const selected = selectedAnswer[currentMcqIndex];
+
+//     if (selected === undefined) {
+//       message.error("Please select an answer before moving to the next question.");
+//       return;
+//     }
+
+//     const feedback = selected === currentMcq.correctAnswer ? "Correct!" : "Incorrect.";
+//     setAnswerFeedback({
+//       ...answerFeedback,
+//       [currentMcqIndex]: feedback,
+//     });
+
+//     if (currentMcqIndex + 1 < mcqs.length) {
+//       setCurrentMcqIndex(currentMcqIndex + 1);
+//     } else {
+//       if (!userName) {
+//         const name = prompt("Please enter your name: ");
+//         setUserName(name || "Guest");
+//       }
+//       setShowResults(true);
+//     }
+//   };
+
+//   const navigateToTopic = (direction) => {
+//     if (currentTopicIndex !== null) {
+//       const newTopicIndex = currentTopicIndex + direction;
+//       if (newTopicIndex >= 0 && newTopicIndex < allTopics.length) {
+//         const newTopic = allTopics[newTopicIndex];
+//         navigate(`/description/${subCategory}/${newTopic.slug}`);
+//         window.scrollTo(0, 0);
+//       }
+//     }
+//   };
+
+//   const getNextTopic = () => {
+//     if (currentTopicIndex === null || currentTopicIndex + 1 >= allTopics.length) return null;
+//     return allTopics[currentTopicIndex + 1];
+//   };
+
+//   const getPrevTopic = () => {
+//     if (currentTopicIndex === null || currentTopicIndex - 1 < 0) return null;
+//     return allTopics[currentTopicIndex - 1];
+//   };
+
+//   return (
+//     <div className="description-container">
+//       {loading ? (
+//         <div className="loader-overlay">
+//           <Spin size="large" />
+//         </div>
+//       ) : (
+//         products.length > 0 && (
+//           <>
+//             <h1 style={{ fontSize: "2rem", fontWeight: "bold", textAlign: "center" }}>{products[0].topic}</h1>
+
+//             {products.map((product) => (
+//               <article key={product.id} className="product-article">
+//                 <div
+//                   className="product-description"
+//                   dangerouslySetInnerHTML={{ __html: product.description }}
+//                 />
+//               </article>
+//             ))}
+
+//             <Document
+//               file={products[0].notesFile}
+//               onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+//               loading={<Spin size="large" tip="Loading PDF..." />}
+//               error={<div className="text-red-500">Failed to load PDF</div>}
+//             >
+//               {Array.from({ length: numPages }, (_, index) => (
+//                 <Page
+//                   key={`page_${index + 1}`}
+//                   pageNumber={index + 1}
+//                   renderTextLayer={false}
+//                   renderAnnotationLayer={false}
+//                 />
+//               ))}
+//             </Document>
+
+//             {/* MCQs and Results Section */}
+//             {/* ...retain your existing MCQ code and pass necessary state/handlers */}
+
+//             <CertificateGenerator
+//               mcqs={mcqs}
+//               selectedAnswer={selectedAnswer}
+//               userName={userName}
+//               calculateResults={calculateResults}
+//               handleRetakeTest={handleRetakeTest}
+//               topicName={products[0]?.topic}
+//             />
+
+//             <ShareArticle />
+
+//             <div className="topic-navigation">
+//               {getPrevTopic() && (
+//                 <Link
+//                   to={`/description/${subCategory}/${getPrevTopic().slug}`}
+//                   className="prev-button"
+//                   onClick={() => window.scrollTo(0, 0)}
+//                 >
+//                   <FaChevronLeft /> Previous Topic: {getPrevTopic().topic}
+//                 </Link>
+//               )}
+
+//               {getNextTopic() && (
+//                 <Link
+//                   to={`/description/${subCategory}/${getNextTopic().slug}`}
+//                   className="next-button"
+//                   onClick={() => window.scrollTo(0, 0)}
+//                 >
+//                   Next Topic: {getNextTopic().topic} <FaChevronRight />
+//                 </Link>
+//               )}
+//             </div>
+
+//             <CommentSection subCategory={subCategory} topicId={products[0]?.id} />
+//           </>
+//         )
+//       )}
+//     </div>
+//   );
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// import React, { useState, useEffect } from "react";
+// import { useParams, useNavigate } from "react-router-dom";
+// import { message, Spin } from "antd";
+// import { getDocs, collection } from "firebase/firestore";
+// import { fireStore } from "../config/firebase";
+// import { FaChevronLeft, FaChevronRight } from "react-icons/fa";
+// import { Link } from "react-router-dom";
+// import "../assets/css/description.css";
+// import CommentSection from "./CommentSection";
+// import ShareArticle from "./ShareArticle";
+// // import { Helmet } from "react-helmet-async";
+// import CertificateGenerator from "./CertificateGenerator";
+// import { Document, Page } from "react-pdf";
+// import { pdfjs } from 'react-pdf';
+// pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+
+// // Helper function to create slugs
+// const createSlug = (str) => {
+//   return str
+//     .toLowerCase()
+//     .replace(/[^\w\s-]/g, "")
+//     .replace(/\s+/g, "-")
+//     .replace(/--+/g, "-")
+//     .trim();
+// };
+
+// export default function Description() {
+//   const { subCategory, topicSlug } = useParams();
+//   console.log("SubCategory:", subCategory);
+//   console.log("TopicSlug:", topicSlug);
+//   const navigate = useNavigate();
+
+//   const [products, setProducts] = useState([]);
+//   const [loading, setLoading] = useState(true);
+//   const [mcqs, setMcqs] = useState([]);
+//   const [selectedAnswer, setSelectedAnswer] = useState({});
+//   const [answerFeedback, setAnswerFeedback] = useState({});
+//   const [currentMcqIndex, setCurrentMcqIndex] = useState(0);
+//   const [showResults, setShowResults] = useState(false);
+//   const [showReviewSection, setShowReviewSection] = useState(false);
+//   const [allTopics, setAllTopics] = useState([]);
+//   const [currentTopicIndex, setCurrentTopicIndex] = useState(null);
+//   const [userName, setUserName] = useState("");
+//   const [numPages, setNumPages] = useState(null);
+//   const [pageNumber, setPageNumber] = useState(1);
+
+//   useEffect(() => {
+//     fetchProducts();
+//     fetchAllTopics();
+//   }, []);
+
+//   const fetchProducts = async () => {
+//     try {
+//       const querySnapshot = await getDocs(collection(fireStore, "topics"));
+//       const productList = querySnapshot.docs
+//         .map((doc) => ({
+//           id: doc.id,
+//           ...doc.data(),
+//           slug: createSlug(doc.data().topic),
+//         }))
+//         .filter(
+//           (product) =>
+//             product.subCategory === subCategory &&
+//             (product.id === topicSlug || product.slug === topicSlug)
+//         );
+//       setProducts(productList);
+//       console.log("Fetched Products:", productList);
+//       setMcqs(productList[0]?.mcqs || []);
+//       setLoading(false);
+//     } catch (error) {
+//       message.error("Failed to fetch products.");
+//       console.error(error);
+//     }
+//   };
+
+//   const fetchAllTopics = async () => {
+//     try {
+//       const querySnapshot = await getDocs(collection(fireStore, "topics"));
+//       const topicsList = querySnapshot.docs
+//         .map((doc) => ({
+//           id: doc.id,
+//           ...doc.data(),
+//           slug: createSlug(doc.data().topic),
+//         }))
+//         .filter((topic) => topic.subCategory === subCategory)
+//         .sort((a, b) => a.timestamp - b.timestamp);
+
+//       setAllTopics(topicsList);
+
+//       const currentTopicIdx = topicsList.findIndex(
+//         (topic) => topic.id === topicSlug || topic.slug === topicSlug
+//       );
+//       setCurrentTopicIndex(currentTopicIdx);
+//     } catch (error) {
+//       message.error("Failed to fetch topics.");
+//       console.error(error);
+//     }
+//   };
+//     const onDocumentLoadSuccess = ({ numPages }) => {
+//       console.log('PDF loaded with', numPages, 'pages');
+//     };
+
+
+//   const navigateToTopic = (direction) => {
+//     if (currentTopicIndex !== null) {
+//       const newTopicIndex = currentTopicIndex + direction;
+//       if (newTopicIndex >= 0 && newTopicIndex < allTopics.length) {
+//         const newTopic = allTopics[newTopicIndex];
+//         navigate(`/description/${subCategory}/${newTopic.slug}`);
+//         window.scrollTo(0, 0);
+//       }
+//     }
+//   };
+
+//   const handleAnswerChange = (event) => {
+//     const { value } = event.target;
+//     setSelectedAnswer({
+//       ...selectedAnswer,
+//       [currentMcqIndex]: value,
+//     });
+//   };
+
+//   const handleNextQuestion = () => {
+//     const currentMcq = mcqs[currentMcqIndex];
+//     const selected = selectedAnswer[currentMcqIndex];
+
+//     if (selected === undefined) {
+//       message.error(
+//         "Please select an answer before moving to the next question."
+//       );
+//       return;
+//     }
+
+//     const feedback =
+//       selected === currentMcq.correctAnswer ? "Correct!" : "Incorrect.";
+//     setAnswerFeedback({
+//       ...answerFeedback,
+//       [currentMcqIndex]: feedback,
+//     });
+
+//     if (currentMcqIndex + 1 < mcqs.length) {
+//       setCurrentMcqIndex(currentMcqIndex + 1);
+//     } else {
+//       if (!userName) {
+//         const name = prompt("Please enter your name: ");
+//         setUserName(name || "Guest");
+//       }
+//       setShowResults(true);
+//     }
+//   };
+
+//   const calculateResults = () => {
+//     let correctAnswers = 0;
+//     mcqs.forEach((mcq, index) => {
+//       if (selectedAnswer[index] === mcq.correctAnswer) {
+//         correctAnswers++;
+//       }
+//     });
+//     return correctAnswers;
+//   };
+
+//   const handleRetakeTest = () => {
+//     setSelectedAnswer({});
+//     setAnswerFeedback({});
+//     setCurrentMcqIndex(0);
+//     setShowResults(false);
+//     setShowReviewSection(false);
+//   };
+
+//   const getNextTopic = () => {
+//     if (currentTopicIndex === null || currentTopicIndex + 1 >= allTopics.length)
+//       return null;
+//     return allTopics[currentTopicIndex + 1];
+//   };
+
+//   const getPrevTopic = () => {
+//     if (currentTopicIndex === null || currentTopicIndex - 1 < 0) return null;
+//     return allTopics[currentTopicIndex - 1];
+//   };
+
+//   const extractTextFromHTML = (htmlString) => {
+//     const parser = new DOMParser();
+//     const doc = parser.parseFromString(htmlString, "text/html");
+//     return doc.body.textContent || "";
+//   };
+
+//   return (
+//     <div className="description-container">
+//       {!loading && products.length > 0 && (
+//         <Helmet>
+//           <title>Gramture - {products[0].topic}</title>
+//           <meta
+//             name="description"
+//             content={extractTextFromHTML(products[0].description).substring(
+//               0,
+//               150
+//             )}
+//           />
+//         </Helmet>
+//       )}
+
+//       {loading && (
+//         <div className="loader-overlay">
+//           <Spin size="large" />
+//         </div>
+//       )}
+
+//       {products.length > 0 && (
+//         <>
+//           <h1
+//             style={{
+//               fontSize: "2rem",
+//               fontWeight: "bold",
+//               marginLeft: "10px",
+//               textAlign: "center",
+//             }}
+//           >
+//             {products[0].topic}
+//           </h1>
+//           {products.map((product) => (
+//             <article key={product.id} className="product-article">
+//               <div className="product-description">
+//                 <div
+//                   dangerouslySetInnerHTML={{ __html: product.description }}
+//                 />
+//               </div>
+//             </article>
+//           ))}
+
+//       <Document
+//         file={products[0].notesFile}
+//         onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+//         loading={<Spin size="large" tip="Loading PDF..." />}
+//         error={<div className="text-red-500">Failed to load PDF</div>}
+//       >
+//         {Array.from({ length: numPages }, (_, index) => (
+//           <Page
+//             key={`page_${index + 1}`}
+//             pageNumber={index + 1}
+//             renderTextLayer={false}
+//             renderAnnotationLayer={false}
+//           />
+//         ))}
+//       </Document>
+
+
+
+//           {mcqs.length > 0 && (
+//             <div className="mcq-section">
+//               {showResults ? (
+//                 <div className="result-summary">
+//                   <button
+//                     onClick={handleRetakeTest}
+//                     style={{
+//                       padding: "10px 20px",
+//                       fontSize: "16px",
+//                       backgroundColor: "#FF9800",
+//                       color: "white",
+//                       border: "none",
+//                       borderRadius: "5px",
+//                       cursor: "pointer",
+//                       marginRight: "10px",
+//                     }}
+//                   >
+//                     Retake Test
+//                   </button>
+
+//                   {!showReviewSection ? (
+//                     <button
+//                       onClick={() => setShowReviewSection(true)}
+//                       style={{
+//                         padding: "10px 20px",
+//                         fontSize: "16px",
+//                         backgroundColor: "#2196F3",
+//                         color: "white",
+//                         border: "none",
+//                         borderRadius: "5px",
+//                         cursor: "pointer",
+//                       }}
+//                     >
+//                       Review Your Answers
+//                     </button>
+//                   ) : (
+//                     <div
+//                       className="review-section"
+//                       style={{ marginTop: "30px", marginBottom: "30px" }}
+//                     >
+//                       <h2 style={{ textAlign: "center" }}>
+//                         Review Your Answers
+//                       </h2>
+//                       <div
+//                         style={{
+//                           backgroundColor: "#f5f5f5",
+//                           padding: "20px",
+//                           borderRadius: "8px",
+//                           marginBottom: "20px",
+//                         }}
+//                       >
+//                         <h3 style={{ textAlign: "center" }}>
+//                           Score: {calculateResults()} out of {mcqs.length} (
+//                           {Math.round((calculateResults() / mcqs.length) * 100)}
+//                           %)
+//                         </h3>
+//                       </div>
+
+//                       {mcqs.map((mcq, index) => {
+//                         const userAnswer = selectedAnswer[index];
+//                         const isCorrect = userAnswer === mcq.correctAnswer;
+
+//                         return (
+//                           <div
+//                             key={index}
+//                             className="review-question"
+//                             style={{
+//                               marginBottom: "20px",
+//                               padding: "15px",
+//                               border: "1px solid #ccc",
+//                               borderRadius: "8px",
+//                               backgroundColor: isCorrect
+//                                 ? "#e6ffed"
+//                                 : "#ffe6e6",
+//                             }}
+//                           >
+//                             <h4>
+//                               {index + 1}.{" "}
+//                               <span
+//                                 dangerouslySetInnerHTML={{
+//                                   __html: mcq.question,
+//                                 }}
+//                               />
+//                             </h4>
+//                             <p>
+//                               <strong>Your Answer:</strong>{" "}
+//                               <span
+//                                 style={{ color: isCorrect ? "green" : "red" }}
+//                               >
+//                                 {userAnswer || "Not Answered"}
+//                               </span>
+//                             </p>
+//                             {!isCorrect && (
+//                               <p>
+//                                 <strong>Correct Answer:</strong>{" "}
+//                                 <span style={{ color: "green" }}>
+//                                   {mcq.correctAnswer}
+//                                 </span>
+//                               </p>
+//                             )}
+//                             {mcq.logic && (
+//                               <div
+//                                 style={{
+//                                   marginTop: "10px",
+//                                   padding: "10px",
+//                                   backgroundColor: "#f0f8ff",
+//                                   borderRadius: "5px",
+//                                 }}
+//                               >
+//                                 <strong>Explanation:</strong>
+//                                 <div
+//                                   dangerouslySetInnerHTML={{
+//                                     __html: mcq.logic,
+//                                   }}
+//                                 />
+//                               </div>
+//                             )}
+//                           </div>
+//                         );
+//                       })}
+//                     </div>
+//                   )}
+//                 </div>
+//               ) : (
+//                 <>
+//                   <h4>
+//                     Question {currentMcqIndex + 1} of {mcqs.length}
+//                   </h4>
+//                   <div className="mcq-item">
+//                     <div
+//                       dangerouslySetInnerHTML={{
+//                         __html: mcqs[currentMcqIndex]?.question,
+//                       }}
+//                     />
+//                     <div className="mcq-options">
+//                       {mcqs[currentMcqIndex]?.options.map((option, index) => (
+//                         <label key={index} className="mcq-option">
+//                           <input
+//                             type="radio"
+//                             name={`mcq-${currentMcqIndex}`}
+//                             value={option}
+//                             checked={selectedAnswer[currentMcqIndex] === option}
+//                             onChange={handleAnswerChange}
+//                           />
+//                           {option}
+//                         </label>
+//                       ))}
+//                     </div>
+//                     {answerFeedback[currentMcqIndex] && (
+//                       <p
+//                         className={
+//                           answerFeedback[currentMcqIndex] === "Correct!"
+//                             ? "correct"
+//                             : "incorrect"
+//                         }
+//                       >
+//                         {answerFeedback[currentMcqIndex]}
+//                       </p>
+//                     )}
+//                   </div>
+//                   <button
+//                     onClick={handleNextQuestion}
+//                     style={{
+//                       padding: "10px 20px",
+//                       fontSize: "16px",
+//                       backgroundColor: "#4CAF50",
+//                       color: "white",
+//                       border: "none",
+//                       borderRadius: "5px",
+//                       cursor: "pointer",
+//                       transition: "background-color 0.3s ease",
+//                     }}
+//                   >
+//                     {currentMcqIndex + 1 === mcqs.length
+//                       ? "Finish"
+//                       : "Next Question"}
+//                   </button>
+//                 </>
+//               )}
+//             </div>
+//           )}
+
+//           <CertificateGenerator
+//             mcqs={mcqs}
+//             selectedAnswer={selectedAnswer}
+//             userName={userName}
+//             calculateResults={calculateResults}
+//             handleRetakeTest={handleRetakeTest}
+//             topicName={products[0]?.topic}
+//           />
+
+//           <ShareArticle />
+
+//           <div className="topic-navigation">
+//             {getPrevTopic() &&
+//               getPrevTopic().subCategory === subCategory &&
+//               getPrevTopic().class === products[0].class && (
+//                 <Link
+//                   to={`/description/${subCategory}/${getPrevTopic().slug}`}
+//                   className="prev-button"
+//                   style={{
+//                     display: "flex",
+//                     alignItems: "center",
+//                     marginBottom: "20px",
+//                     fontSize: "18px",
+//                     fontWeight: "bold",
+//                     textDecoration: "none",
+//                     color: "#0073e6",
+//                   }}
+//                   onClick={() => window.scrollTo(0, 0)}
+//                 >
+//                   <FaChevronLeft className="nav-icon" /> Previous Topic:{" "}
+//                   {getPrevTopic().topic}
+//                 </Link>
+//               )}
+
+//             {getNextTopic() &&
+//               getNextTopic().subCategory === subCategory &&
+//               getNextTopic().class === products[0].class && (
+//                 <Link
+//                   to={`/description/${subCategory}/${getNextTopic().slug}`}
+//                   className="next-button"
+//                   style={{
+//                     display: "flex",
+//                     alignItems: "center",
+//                     marginBottom: "20px",
+//                     fontSize: "18px",
+//                     fontWeight: "bold",
+//                     textDecoration: "none",
+//                     color: "#0073e6",
+//                   }}
+//                   onClick={() => window.scrollTo(0, 0)}
+//                 >
+//                   Next Topic: {getNextTopic().topic}{" "}
+//                   <FaChevronRight className="nav-icon" />
+//                 </Link>
+//               )}
+//           </div>
+
+//           <CommentSection subCategory={subCategory} topicId={products[0]?.id} />
+//           {/* <p style={{ fontSize: "1.1rem", marginLeft: "10px" }}>
+//             Gramture is an Educational website that helps students in their 9th,
+//             10th, 1st year, and 2nd-year studies.
+//           </p> */}
+//         </>
+//       )}
+//     </div>
+//   );
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
