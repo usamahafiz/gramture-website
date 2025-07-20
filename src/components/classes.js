@@ -5,6 +5,8 @@ import class9 from '../assets/images/9 class.jpg';
 import class10 from '../assets/images/class 10.png';
 import class11 from '../assets/images/class 11.png';
 import class12 from '../assets/images/class 12.png';
+import grammar from '../assets/images/grammar.jpg';
+
 import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { fireStore } from '../config/firebase';
 import { Spinner, Container, Row } from 'react-bootstrap';
@@ -134,6 +136,7 @@ const FeaturedClasses = () => {
               <li>MCQs Test</li>
             </ul>
           </div>
+          
 
           <div className="class-card" onClick={() => handleCardClick("12")}>
             <img src={class12} alt="Class 12" className="class-image" />
@@ -145,7 +148,19 @@ const FeaturedClasses = () => {
               <li>MCQs Test</li>
             </ul>
           </div>
+
+           <div className="class-card" onClick={() => handleCardClick("12")}>
+            <img src={grammar} alt="Class 12" className="class-image" />
+            <h3>Grammar</h3>
+            <ul>
+              <li>Letter</li>
+              <li>Application</li>
+              <li>Moral Stories</li>
+              <li>Translation</li>
+            </ul>
+          </div>
         </div>
+        
 
         {/* 🔽 Recents Section (Placeholder) */}
         <div className="recent-section">
