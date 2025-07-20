@@ -47,6 +47,7 @@ function App() {
 
           <Route path="/description" element={<DescriptionPage />} />
           <Route path="/description/:subCategory/:topicSlug" element={<DescriptionPage />} />
+          
 
 
           <Route path="/notes/:selectedClass" element={<Notes />} />
